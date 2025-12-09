@@ -10,6 +10,7 @@ export default function TimeDelayedChat() {
   const [nextNotificationTime, setNextNotificationTime] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ja-JP'));
+  const [pendingMessage, setPendingMessage] = useState('');
 
   useEffect(() => {
     const savedMessages = localStorage.getItem('timeDelayMessages');
@@ -26,9 +27,13 @@ export default function TimeDelayedChat() {
 
     const savedWaiting = localStorage.getItem('waitingForReply');
     const savedNotificationTime = localStorage.getItem('nextNotificationTime');
+    const savedPendingMessage = localStorage.getItem('pendingMessage');
     if (savedWaiting === 'true' && savedNotificationTime) {
       setWaitingForReply(true);
       setNextNotificationTime(new Date(savedNotificationTime));
+      if (savedPendingMessage) {
+        setPendingMessage(savedPendingMessage);
+      }
     }
   }, []);
 
@@ -61,15 +66,17 @@ export default function TimeDelayedChat() {
 
   const triggerNotification = () => {
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('時間差対話', {
-        body: '過去のあなたからメッセージが届きました',
+      new Notification('SabLog', {
+        body: pendingMessage || '過去のあなたからメッセージが届きました',
         icon: '💬'
       });
     }
     setWaitingForReply(false);
     setNextNotificationTime(null);
+    setPendingMessage('');
     localStorage.removeItem('waitingForReply');
     localStorage.removeItem('nextNotificationTime');
+    localStorage.removeItem('pendingMessage');
   };
 
   const requestNotificationPermission = async () => {
@@ -91,6 +98,7 @@ export default function TimeDelayedChat() {
 
     setMessages(prev => [...prev, newMessage]);
     setCurrentMessage('');
+    setPendingMessage(currentMessage);
 
     const delayMinutes = getRandomDelay();
     const notificationTime = new Date(now.getTime() + delayMinutes * 60000);
@@ -99,6 +107,7 @@ export default function TimeDelayedChat() {
     setNextNotificationTime(notificationTime);
     localStorage.setItem('waitingForReply', 'true');
     localStorage.setItem('nextNotificationTime', notificationTime.toISOString());
+    localStorage.setItem('pendingMessage', currentMessage);
 
     requestNotificationPermission();
   };
@@ -142,7 +151,7 @@ export default function TimeDelayedChat() {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <MessageSquare size={32} />
-                <h1 className="text-2xl font-bold">時間差対話</h1>
+                <h1 className="text-2xl font-bold">SabLog</h1>
               </div>
               <button
                 onClick={() => setShowSettings(!showSettings)}
