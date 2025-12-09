@@ -1,0 +1,253 @@
+import React, { useState, useEffect } from 'react';
+import { Calendar, Clock, Send, Settings, MessageSquare } from 'lucide-react';
+
+export default function TimeDelayedChat() {
+  const [messages, setMessages] = useState([]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [minDelay, setMinDelay] = useState(5);
+  const [maxDelay, setMaxDelay] = useState(30);
+  const [waitingForReply, setWaitingForReply] = useState(false);
+  const [nextNotificationTime, setNextNotificationTime] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ja-JP'));
+
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('timeDelayMessages');
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages));
+    }
+    
+    const savedSettings = localStorage.getItem('delaySettings');
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      setMinDelay(settings.min);
+      setMaxDelay(settings.max);
+    }
+
+    const savedWaiting = localStorage.getItem('waitingForReply');
+    const savedNotificationTime = localStorage.getItem('nextNotificationTime');
+    if (savedWaiting === 'true' && savedNotificationTime) {
+      setWaitingForReply(true);
+      setNextNotificationTime(new Date(savedNotificationTime));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem('timeDelayMessages', JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    localStorage.setItem('delaySettings', JSON.stringify({ min: minDelay, max: maxDelay }));
+  }, [minDelay, maxDelay]);
+
+  useEffect(() => {
+    if (!waitingForReply || !nextNotificationTime) return;
+
+    const checkNotification = setInterval(() => {
+      if (new Date() >= nextNotificationTime) {
+        triggerNotification();
+        clearInterval(checkNotification);
+      }
+    }, 1000);
+
+    return () => clearInterval(checkNotification);
+  }, [waitingForReply, nextNotificationTime]);
+
+  const getRandomDelay = () => {
+    return Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+  };
+
+  const triggerNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('時間差対話', {
+        body: '過去のあなたからメッセージが届きました',
+        icon: '💬'
+      });
+    }
+    setWaitingForReply(false);
+    setNextNotificationTime(null);
+    localStorage.removeItem('waitingForReply');
+    localStorage.removeItem('nextNotificationTime');
+  };
+
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+  };
+
+  const sendMessage = () => {
+    if (!currentMessage.trim()) return;
+
+    const now = new Date();
+    const newMessage = {
+      id: Date.now(),
+      text: currentMessage,
+      timestamp: now.toISOString(),
+      date: now.toLocaleDateString('ja-JP')
+    };
+
+    setMessages(prev => [...prev, newMessage]);
+    setCurrentMessage('');
+
+    const delayMinutes = getRandomDelay();
+    const notificationTime = new Date(now.getTime() + delayMinutes * 60000);
+    
+    setWaitingForReply(true);
+    setNextNotificationTime(notificationTime);
+    localStorage.setItem('waitingForReply', 'true');
+    localStorage.setItem('nextNotificationTime', notificationTime.toISOString());
+
+    requestNotificationPermission();
+  };
+
+  const getTimeUntilNotification = () => {
+    if (!nextNotificationTime) return '';
+    const now = new Date();
+    const diff = nextNotificationTime - now;
+    if (diff <= 0) return '通知準備中...';
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    return `${minutes}分${seconds}秒後`;
+  };
+
+  const groupMessagesByDate = () => {
+    const grouped = {};
+    messages.forEach(msg => {
+      if (!grouped[msg.date]) {
+        grouped[msg.date] = [];
+      }
+      grouped[msg.date].push(msg);
+    });
+    return grouped;
+  };
+
+  const formatTime = (timestamp) => {
+    return new Date(timestamp).toLocaleTimeString('ja-JP', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const groupedMessages = groupMessagesByDate();
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-500 p-6 text-white">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <MessageSquare size={32} />
+                <h1 className="text-2xl font-bold">時間差対話</h1>
+              </div>
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="p-2 hover:bg-white/20 rounded-lg transition"
+              >
+                <Settings size={24} />
+              </button>
+            </div>
+            {waitingForReply && (
+              <div className="mt-4 bg-white/20 rounded-lg p-3 flex items-center gap-2">
+                <Clock size={20} />
+                <span className="text-sm">次の通知まで: {getTimeUntilNotification()}</span>
+              </div>
+            )}
+          </div>
+
+          {showSettings && (
+            <div className="bg-indigo-50 p-6 border-b">
+              <h3 className="font-semibold text-gray-800 mb-4">通知間隔の設定</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-2">
+                    最小時間 (分): {minDelay}
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="60"
+                    value={minDelay}
+                    onChange={(e) => setMinDelay(Math.min(Number(e.target.value), maxDelay))}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-2">
+                    最大時間 (分): {maxDelay}
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="120"
+                    value={maxDelay}
+                    onChange={(e) => setMaxDelay(Math.max(Number(e.target.value), minDelay))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-6 h-96 overflow-y-auto">
+            {Object.keys(groupedMessages).length === 0 ? (
+              <div className="text-center text-gray-400 mt-20">
+                <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
+                <p>メッセージを送信して対話を始めましょう</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(groupedMessages).reverse().map(([date, msgs]) => (
+                  <div key={date}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Calendar size={16} className="text-gray-400" />
+                      <span className="text-sm text-gray-500 font-medium">{date}</span>
+                    </div>
+                    <div className="space-y-3">
+                      {msgs.map((msg) => (
+                        <div key={msg.id} className="bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg p-4 shadow-sm">
+                          <p className="text-gray-800 mb-2">{msg.text}</p>
+                          <span className="text-xs text-gray-500">{formatTime(msg.timestamp)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-6 border-t bg-gray-50">
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={currentMessage}
+                onChange={(e) => setCurrentMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                placeholder="未来の自分へメッセージを送る..."
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                disabled={waitingForReply}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={waitingForReply || !currentMessage.trim()}
+                className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+            {waitingForReply && (
+              <p className="text-sm text-gray-500 mt-2">
+                返信を待っています。通知が届くまでお待ちください。
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
