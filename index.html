@@ -9,43 +9,14 @@ export default function TimeDelayedChat() {
   const [waitingForReply, setWaitingForReply] = useState(false);
   const [nextNotificationTime, setNextNotificationTime] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('ja-JP'));
   const [pendingMessage, setPendingMessage] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState('default');
 
   useEffect(() => {
-    const savedMessages = localStorage.getItem('timeDelayMessages');
-    if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
-    }
-    
-    const savedSettings = localStorage.getItem('delaySettings');
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      setMinDelay(settings.min);
-      setMaxDelay(settings.max);
-    }
-
-    const savedWaiting = localStorage.getItem('waitingForReply');
-    const savedNotificationTime = localStorage.getItem('nextNotificationTime');
-    const savedPendingMessage = localStorage.getItem('pendingMessage');
-    if (savedWaiting === 'true' && savedNotificationTime) {
-      setWaitingForReply(true);
-      setNextNotificationTime(new Date(savedNotificationTime));
-      if (savedPendingMessage) {
-        setPendingMessage(savedPendingMessage);
-      }
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
     }
   }, []);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem('timeDelayMessages', JSON.stringify(messages));
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem('delaySettings', JSON.stringify({ min: minDelay, max: maxDelay }));
-  }, [minDelay, maxDelay]);
 
   useEffect(() => {
     if (!waitingForReply || !nextNotificationTime) return;
@@ -71,17 +42,16 @@ export default function TimeDelayedChat() {
         icon: '💬'
       });
     }
+    
     setWaitingForReply(false);
     setNextNotificationTime(null);
     setPendingMessage('');
-    localStorage.removeItem('waitingForReply');
-    localStorage.removeItem('nextNotificationTime');
-    localStorage.removeItem('pendingMessage');
   };
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window && Notification.permission === 'default') {
-      await Notification.requestPermission();
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
     }
   };
 
@@ -105,21 +75,21 @@ export default function TimeDelayedChat() {
     
     setWaitingForReply(true);
     setNextNotificationTime(notificationTime);
-    localStorage.setItem('waitingForReply', 'true');
-    localStorage.setItem('nextNotificationTime', notificationTime.toISOString());
-    localStorage.setItem('pendingMessage', currentMessage);
 
     requestNotificationPermission();
   };
 
   const getTimeUntilNotification = () => {
     if (!nextNotificationTime) return '';
+    
     const now = new Date();
     const diff = nextNotificationTime - now;
+    
     if (diff <= 0) return '通知準備中...';
     
     const minutes = Math.floor(diff / 60000);
     const seconds = Math.floor((diff % 60000) / 1000);
+    
     return `${minutes}分${seconds}秒後`;
   };
 
@@ -144,11 +114,12 @@ export default function TimeDelayedChat() {
   const groupedMessages = groupMessagesByDate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="bg-gradient-to-r from-indigo-500 to-purple-500 p-6 text-white">
-            <div className="flex justify-between items-center">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <MessageSquare size={32} />
                 <h1 className="text-2xl font-bold">SabLog</h1>
@@ -161,16 +132,17 @@ export default function TimeDelayedChat() {
               </button>
             </div>
             {waitingForReply && (
-              <div className="mt-4 bg-white/20 rounded-lg p-3 flex items-center gap-2">
-                <Clock size={20} />
-                <span className="text-sm">次の通知まで: {getTimeUntilNotification()}</span>
+              <div className="mt-4 flex items-center gap-2 text-sm bg-white/20 rounded-lg p-3">
+                <Clock size={16} />
+                <span>次の通知まで: {getTimeUntilNotification()}</span>
               </div>
             )}
           </div>
 
+          {/* Settings Panel */}
           {showSettings && (
-            <div className="bg-indigo-50 p-6 border-b">
-              <h3 className="font-semibold text-gray-800 mb-4">通知間隔の設定</h3>
+            <div className="bg-gray-50 p-6 border-b">
+              <h3 className="font-semibold mb-4 text-gray-800">通知間隔の設定</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-2">
@@ -179,7 +151,7 @@ export default function TimeDelayedChat() {
                   <input
                     type="range"
                     min="1"
-                    max="60"
+                    max="120"
                     value={minDelay}
                     onChange={(e) => setMinDelay(Math.min(Number(e.target.value), maxDelay))}
                     className="w-full"
@@ -202,41 +174,48 @@ export default function TimeDelayedChat() {
             </div>
           )}
 
-          <div className="p-6 h-96 overflow-y-auto">
+          {/* Messages Area */}
+          <div className="h-96 overflow-y-auto p-6 space-y-6">
             {Object.keys(groupedMessages).length === 0 ? (
-              <div className="text-center text-gray-400 mt-20">
-                <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                <p>メッセージを送信して対話を始めましょう</p>
+              <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <Calendar size={48} className="mx-auto mb-3 opacity-50" />
+                  <p>メッセージを送信して対話を始めましょう</p>
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
                 {Object.entries(groupedMessages).reverse().map(([date, msgs]) => (
                   <div key={date}>
                     <div className="flex items-center gap-2 mb-3">
-                      <Calendar size={16} className="text-gray-400" />
-                      <span className="text-sm text-gray-500 font-medium">{date}</span>
+                      <div className="h-px bg-gray-200 flex-1"></div>
+                      <span className="text-xs text-gray-500 font-medium">{date}</span>
+                      <div className="h-px bg-gray-200 flex-1"></div>
                     </div>
-                    <div className="space-y-3">
-                      {msgs.map((msg) => (
-                        <div key={msg.id} className="bg-gradient-to-r from-indigo-100 to-purple-100 rounded-lg p-4 shadow-sm">
-                          <p className="text-gray-800 mb-2">{msg.text}</p>
-                          <span className="text-xs text-gray-500">{formatTime(msg.timestamp)}</span>
+                    {msgs.map((msg) => (
+                      <div key={msg.id} className="mb-3">
+                        <div className="bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-3 inline-block max-w-[80%]">
+                          <p>{msg.text}</p>
+                          <p className="text-xs text-indigo-200 mt-1">
+                            {formatTime(msg.timestamp)}
+                          </p>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="p-6 border-t bg-gray-50">
-            <div className="flex gap-3">
+          {/* Input Area */}
+          <div className="border-t p-4 bg-gray-50">
+            <div className="flex gap-2">
               <input
                 type="text"
                 value={currentMessage}
                 onChange={(e) => setCurrentMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyPress={(e) => e.key === 'Enter' && !waitingForReply && sendMessage()}
                 placeholder="未来の自分へメッセージを送る..."
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 disabled={waitingForReply}
@@ -244,13 +223,13 @@ export default function TimeDelayedChat() {
               <button
                 onClick={sendMessage}
                 disabled={waitingForReply || !currentMessage.trim()}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
               >
                 <Send size={20} />
               </button>
             </div>
             {waitingForReply && (
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-500 mt-2 text-center">
                 返信を待っています。通知が届くまでお待ちください。
               </p>
             )}
